@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="SmartMart — everyday goodness, thoughtfully gathered."
+    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <title>SmartMart · Good things, every day</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="smartmart.css" />
+    <script src="config.js"></script>
+    <script type="module" src="shop.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#catalog">Skip to products</a>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="./">SmartMart<span>✳</span></a>
+        <nav class="row" aria-label="Main navigation">
+          <button id="my-orders">My orders</button
+          ><a href="admin.html" class="button">Admin</a
+          ><button id="open-cart" class="primary">
+            Basket <span id="cart-count">0</span>
+          </button>
+        </nav>
+      </header>
+      <main>
+        <section class="market-hero">
+          <div>
+            <div class="eyebrow">Thoughtfully gathered. Everyday good.</div>
+            <h1>Good things.<br />Fresh starts.</h1>
+            <p>
+              From your morning coffee to tonight’s table.<br />A little
+              goodness for every part of your day.
+            </p>
+            <a class="button primary" href="#catalog">Explore the shelves ↘</a>
+          </div>
+          <div class="hero-graphic" aria-hidden="true">
+            <div class="graphic-label">THE DAILY<br />ESSENTIALS</div>
+            <div class="graphic-circle">✳</div>
+            <span>FRESH PICKS / SMART PRICES</span>
+          </div>
+        </section>
+        <div class="market-note">
+          <span>01 / Fresh pantry favorites</span
+          ><span>02 / Simple, transparent prices</span
+          ><span>03 / A better everyday basket</span>
+        </div>
+        <section id="catalog">
+          <div class="row between section-title">
+            <div>
+              <div class="eyebrow">Your neighborhood, online</div>
+              <h2>On the shelves</h2>
+            </div>
+            <span id="product-count" class="muted" aria-live="polite"></span>
+          </div>
+          <div class="toolbar">
+            <label
+              >Search products<input
+                id="search"
+                type="search"
+                placeholder="Apples, coffee, a fresh start…" /></label
+            ><label
+              >Category<select id="category" aria-label="Product category">
+                <option value="">All shelves</option>
+                <option>Produce</option>
+                <option>Dairy</option>
+                <option>Bakery</option>
+                <option>Pantry</option>
+              </select></label
+            ><label
+              >Sort<select id="sort" aria-label="Sort products">
+                <option value="featured">Featured</option>
+                <option value="low">Price: low to high</option>
+                <option value="high">Price: high to low</option>
+                <option value="name">Name</option>
+              </select></label
+            ><button id="refresh">Refresh shelves</button>
+          </div>
+          <div id="storage-warning" class="notice" role="status"></div>
+          <div id="shop-error" class="notice" role="alert"></div>
+          <div id="products" class="product-grid">
+            <p>Gathering the good things…</p>
+          </div>
+        </section>
+      </main>
+      <footer>
+        <span class="brand">SmartMart<span>✳</span></span>
+        <a href="admin.html">Open store management ↗</a>
+      </footer>
+    </div>
+    <dialog id="cart-dialog">
+      <div class="dialog-head">
+        <h2>Your everyday basket</h2>
+        <button data-close aria-label="Close basket">×</button>
+      </div>
+      <div id="cart-items" class="list"></div>
+      <div class="basket-total row between">
+        <span>Total</span><strong id="cart-total"></strong>
+      </div>
+      <p class="muted">
+        Demo pricing in INR. No delivery fees or tax added. No payment details
+        required.
+      </p>
+      <button id="to-checkout" class="primary">
+        Continue to simulated checkout →
+      </button>
+    </dialog>
+    <dialog id="checkout-dialog">
+      <form id="checkout-form">
+        <div class="dialog-head">
+          <h2>A few final details</h2>
+          <button type="button" data-close aria-label="Close checkout">
+            ×
+          </button>
+        </div>
+        <p class="muted">
+          This is a simulated order. No payment will be collected and nothing
+          will be shipped. Use fictional details.
+        </p>
+        <label
+          >Name<input
+            name="customer"
+            required
+            minlength="2"
+            maxlength="80"
+            autocomplete="name" /></label
+        ><label
+          >Email<input
+            name="email"
+            required
+            type="email"
+            maxlength="160"
+            autocomplete="email" /></label
+        ><label
+          >Delivery address<textarea
+            name="address"
+            required
+            minlength="8"
+            maxlength="300"
+            autocomplete="street-address"
+          ></textarea>
+        </label>
+        <p id="checkout-total"></p>
+        <div id="checkout-error" class="notice" role="alert"></div>
+        <button id="place-order" class="primary" type="submit">
+          Place demo order
+        </button>
+      </form>
+    </dialog>
+    <dialog id="orders-dialog">
+      <div class="dialog-head">
+        <h2>Your orders</h2>
+        <button data-close aria-label="Close orders">×</button>
+      </div>
+      <p class="muted">Orders saved in this browser.</p>
+      <div id="customer-orders" class="list"></div>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

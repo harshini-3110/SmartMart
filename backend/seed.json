@@ -1,0 +1,122 @@
+[
+  {
+    "name": "Orchard apples",
+    "category": "Produce",
+    "description": "Crisp, naturally sweet apples for the everyday fruit bowl.",
+    "unit": "1 kg",
+    "price": 18000,
+    "stock": 32,
+    "low_stock": 8,
+    "icon": "apple"
+  },
+  {
+    "name": "Golden bananas",
+    "category": "Produce",
+    "description": "A sunny bunch, ready for breakfast bowls and snack breaks.",
+    "unit": "6 pieces",
+    "price": 6000,
+    "stock": 40,
+    "low_stock": 10,
+    "icon": "banana"
+  },
+  {
+    "name": "Garden tomatoes",
+    "category": "Produce",
+    "description": "Bright, juicy tomatoes. Your next sauce starts here.",
+    "unit": "500 g",
+    "price": 4500,
+    "stock": 24,
+    "low_stock": 6,
+    "icon": "tomato"
+  },
+  {
+    "name": "Fresh whole milk",
+    "category": "Dairy",
+    "description": "Fresh whole milk for your first cup and everything after.",
+    "unit": "1 litre",
+    "price": 6800,
+    "stock": 18,
+    "low_stock": 5,
+    "icon": "milk"
+  },
+  {
+    "name": "Cultured yogurt",
+    "category": "Dairy",
+    "description": "Plain, creamy yogurt. Keep it simple or dress it up.",
+    "unit": "400 g",
+    "price": 8500,
+    "stock": 4,
+    "low_stock": 5,
+    "icon": "jar"
+  },
+  {
+    "name": "Everyday sourdough",
+    "category": "Bakery",
+    "description": "A slow-fermented loaf with a crisp crust and soft centre.",
+    "unit": "400 g",
+    "price": 15000,
+    "stock": 12,
+    "low_stock": 4,
+    "icon": "bread"
+  },
+  {
+    "name": "Rolled oats",
+    "category": "Pantry",
+    "description": "Wholegrain oats for a gentle start to your morning.",
+    "unit": "500 g",
+    "price": 12500,
+    "stock": 20,
+    "low_stock": 5,
+    "icon": "jar"
+  },
+  {
+    "name": "Basmati rice",
+    "category": "Pantry",
+    "description": "Fragrant long-grain rice for the meals you come back to.",
+    "unit": "1 kg",
+    "price": 16000,
+    "stock": 30,
+    "low_stock": 8,
+    "icon": "bag"
+  },
+  {
+    "name": "Roasted coffee",
+    "category": "Pantry",
+    "description": "A balanced medium roast, ground for everyday brewing.",
+    "unit": "250 g",
+    "price": 32000,
+    "stock": 3,
+    "low_stock": 5,
+    "icon": "bag"
+  },
+  {
+    "name": "Free-range eggs",
+    "category": "Dairy",
+    "description": "A versatile kitchen staple from our demo farm selection.",
+    "unit": "6 pieces",
+    "price": 9000,
+    "stock": 15,
+    "low_stock": 5,
+    "icon": "egg"
+  },
+  {
+    "name": "Baby spinach",
+    "category": "Produce",
+    "description": "Tender green leaves for salads, soups and quick sautés.",
+    "unit": "200 g",
+    "price": 4000,
+    "stock": 0,
+    "low_stock": 4,
+    "icon": "leaf"
+  },
+  {
+    "name": "Butter croissants",
+    "category": "Bakery",
+    "description": "Flaky, golden pastries for a small everyday celebration.",
+    "unit": "2 pieces",
+    "price": 12000,
+    "stock": 10,
+    "low_stock": 4,
+    "icon": "bread"
+  }
+]

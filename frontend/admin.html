@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content="SmartMart store management dashboard" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <title>SmartMart · Store desk</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="smartmart.css" />
+    <script src="config.js"></script>
+    <script type="module" src="admin.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to store desk</a>
+    <div class="wrap">
+      <header>
+        <a href="./" class="brand">SmartMart<span>✳</span></a>
+        <nav class="row">
+          <a class="button" href="./">← Back to shop</a
+          ><button id="logout" hidden>Sign out</button>
+        </nav>
+      </header>
+      <main id="main">
+        <section class="admin-hero">
+          <div class="eyebrow">Behind the good things</div>
+          <h1>The store desk.</h1>
+          <p class="muted">
+            A clear view of your shelves, orders, and daily rhythm.
+          </p>
+        </section>
+        <div id="admin-message" class="notice" role="alert"></div>
+        <section id="login-panel" class="panel">
+          <form id="login-form">
+            <h2>Open your store desk</h2>
+            <label
+              >Admin access key<input
+                name="key"
+                type="password"
+                required
+                autocomplete="current-password" /></label
+            ><small class="muted">Access key: admindash</small
+            ><button class="primary" type="submit">Sign in</button>
+          </form>
+        </section>
+        <div id="dashboard" hidden>
+          <div class="row between">
+            <nav class="admin-tabs" aria-label="Dashboard sections">
+              <button data-tab="inventory" aria-pressed="true">Inventory</button
+              ><button data-tab="orders" aria-pressed="false">Orders</button
+              ><button data-tab="reports" aria-pressed="false">
+                Sales reports
+              </button>
+            </nav>
+            <button id="refresh-admin">Refresh dashboard</button>
+          </div>
+          <section id="inventory-section">
+            <div class="row between">
+              <h2>The shelves</h2>
+              <button id="add-product" class="primary">+ Add product</button>
+            </div>
+            <div class="toolbar">
+              <label
+                >Find a product<input
+                  type="search"
+                  id="inventory-search"
+                  placeholder="Name or category" /></label
+              ><label
+                >Show<select
+                  id="inventory-filter"
+                  aria-label="Inventory filter"
+                >
+                  <option value="all">All products</option>
+                  <option value="active">Active products</option>
+                  <option value="low">Low stock</option>
+                  <option value="archived">Archived</option>
+                </select></label
+              >
+            </div>
+            <p id="inventory-summary" class="muted"></p>
+            <div class="panel table-wrap">
+              <table>
+                <caption class="sr-only">
+                  Product inventory
+                </caption>
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-rows"></tbody>
+              </table>
+            </div>
+          </section>
+          <section id="orders-section" hidden>
+            <div class="row between">
+              <h2>From basket to doorstep</h2>
+              <label
+                >Filter orders<select
+                  id="order-filter"
+                  aria-label="Order status filter"
+                >
+                  <option value="all">All orders</option>
+                  <option value="pending">Pending</option>
+                  <option value="packed">Packed</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select></label
+              >
+            </div>
+            <p class="muted">
+              Pending → Packed → Completed. Pending or packed orders can be
+              cancelled, restoring stock once.
+            </p>
+            <div id="admin-orders"></div>
+          </section>
+          <section id="reports-section" hidden>
+            <h2>A sense of the day</h2>
+            <form id="report-form" class="toolbar">
+              <label>From (UTC)<input id="report-start" type="date" /></label
+              ><label>Through (UTC)<input id="report-end" type="date" /></label
+              ><button class="primary" type="submit">Apply dates</button
+              ><button id="report-reset" type="button">All time</button>
+            </form>
+            <p class="muted">
+              Revenue includes completed demo orders only. Pending, packed and
+              cancelled orders are excluded. Date filters apply to order
+              creation dates in UTC; stock alerts always show current inventory.
+            </p>
+            <div class="stats">
+              <div class="stat featured">
+                <span class="muted">Completed sales</span
+                ><strong id="report-revenue">—</strong>
+              </div>
+              <div class="stat">
+                <span class="muted">Completed orders</span
+                ><strong id="report-completed">—</strong>
+              </div>
+              <div class="stat">
+                <span class="muted">Awaiting fulfillment</span
+                ><strong id="report-pending">—</strong>
+              </div>
+            </div>
+            <p id="report-counts" class="muted"></p>
+            <div class="admin-grid">
+              <section class="panel">
+                <h2>Sales by day</h2>
+                <div id="daily-sales"></div>
+              </section>
+              <section class="panel">
+                <h2>Top shelf performers</h2>
+                <div id="top-products"></div>
+              </section>
+              <section class="panel">
+                <h2>Stock needs attention</h2>
+                <div id="low-stock"></div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </main>
+      <footer>
+        <span>SmartMart / The store desk</span
+        ><span>Stock and order totals are verified by the backend.</span>
+      </footer>
+    </div>
+    <dialog id="product-dialog">
+      <form id="product-form">
+        <div class="dialog-head">
+          <h2 id="product-title">Add product</h2>
+          <button type="button" data-close aria-label="Close product form">
+            ×
+          </button>
+        </div>
+        <input type="hidden" name="id" /><label
+          >Product name<input name="name" required maxlength="100" /></label
+        ><label
+          >Description<textarea
+            name="description"
+            required
+            maxlength="500"
+          ></textarea>
+        </label>
+        <div class="formgrid">
+          <label
+            >Category<select name="category" aria-label="Product category">
+              <option>Produce</option>
+              <option>Dairy</option>
+              <option>Bakery</option>
+              <option>Pantry</option>
+            </select></label
+          ><label
+            >Unit / pack size<input
+              name="unit"
+              required
+              maxlength="40"
+              placeholder="500 g" /></label
+          ><label
+            >Price (INR)<input
+              name="price"
+              type="number"
+              min="0.01"
+              max="1000000"
+              step="0.01"
+              required /></label
+          ><label
+            >Stock units<input
+              name="stock"
+              type="number"
+              min="0"
+              max="100000"
+              step="1"
+              required /></label
+          ><label
+            >Low-stock threshold<input
+              name="low_stock"
+              type="number"
+              min="0"
+              max="100000"
+              step="1"
+              required /></label
+          ><label
+            >Illustration<select name="icon" aria-label="Product illustration">
+              <option value="apple">Apple</option>
+              <option value="banana">Banana</option>
+              <option value="tomato">Tomato</option>
+              <option value="milk">Milk</option>
+              <option value="jar">Jar</option>
+              <option value="bread">Bread</option>
+              <option value="bag">Bag</option>
+              <option value="egg">Egg</option>
+              <option value="leaf">Leaf</option>
+            </select></label
+          >
+        </div>
+        <label
+          >Availability<select name="active" aria-label="Product availability">
+            <option value="true">Active on shelves</option>
+            <option value="false">Archived</option>
+          </select></label
+        >
+        <div id="product-error" class="notice" role="alert"></div>
+        <button id="save-product" class="primary" type="submit">
+          Save product
+        </button>
+      </form>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
