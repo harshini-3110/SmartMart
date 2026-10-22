@@ -115,7 +115,8 @@ const { chromium } = require("playwright");
       throw Error("removed admin UI is still present");
     await page.getByRole("heading", { name: "Open your store desk" }).waitFor();
     await page.getByLabel("Admin access key", { exact: true }).waitFor();
-    await page.getByText("Local demo access key: admindash", { exact: true }).waitFor();
+    if ((await page.getByText("admindash", { exact: false }).count()) !== 0)
+      throw Error("admin page exposes the demo access key");
     await page.getByLabel("Admin access key", { exact: true }).fill("wrong");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page

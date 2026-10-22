@@ -134,10 +134,26 @@ def test_database_survives_restart(tmp_path):
         assert len(c.get('/api/products').json())==12
 
 
-def test_production_rejects_demo_key(monkeypatch, tmp_path):
+def test_database_path_uses_environment_and_creates_parent(monkeypatch, tmp_path):
+    path=tmp_path/'nested'/'store.db'
+    monkeypatch.setenv('DATABASE_PATH',str(path))
+    with TestClient(create_app(admin_key='test-admin-key')) as c:
+        assert c.get('/api/health').json()['status']=='ok'
+        assert len(c.get('/api/products').json())==12
+    assert path.is_file()
+
+
+@pytest.mark.parametrize('key',['admindash','short','x'*31])
+def test_production_rejects_weak_admin_keys(monkeypatch, tmp_path, key):
     monkeypatch.setenv('APP_ENV', 'production')
     with pytest.raises(RuntimeError):
-        create_app(tmp_path/'production.db', 'admindash')
+        create_app(tmp_path/'production.db', key)
+
+
+def test_production_accepts_long_admin_key(monkeypatch, tmp_path):
+    monkeypatch.setenv('APP_ENV', 'production')
+    with TestClient(create_app(tmp_path/'production.db', 'test-only-production-key-at-least-32-characters')):
+        pass
 
 
 def test_explicit_cors_origin(monkeypatch, tmp_path):
