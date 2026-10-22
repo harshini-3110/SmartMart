@@ -1,15 +1,25 @@
 from concurrent.futures import ThreadPoolExecutor
+import secrets
 import uuid
 import pytest
 from fastapi.testclient import TestClient
-from backend.app import create_app
+from sqlalchemy.engine import URL
+from backend.app import _postgresql_url, create_app
 
-AUTH={'Authorization':'Bearer test-admin-key'}
+TEST_ADMIN_KEY=secrets.token_urlsafe(32)
+AUTH={'Authorization':f'Bearer {TEST_ADMIN_KEY}'}
+TEST_DATABASE_URL=URL.create(
+    'postgresql',
+    username='test-user',
+    password=secrets.token_urlsafe(32),
+    host='db.example.invalid',
+    database='test_db',
+).render_as_string(hide_password=False)
 
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path/'test.db','test-admin-key')) as c:
+    with TestClient(create_app(tmp_path/'test.db',TEST_ADMIN_KEY)) as c:
         yield c
 
 
@@ -126,9 +136,9 @@ def test_concurrent_checkouts_serialize_stock(client):
 
 def test_database_survives_restart(tmp_path):
     path=tmp_path/'persistent.db'
-    with TestClient(create_app(path,'test-admin-key')) as c:
+    with TestClient(create_app(path,TEST_ADMIN_KEY)) as c:
         o=buy(c).json();stock=c.get('/api/products').json()[0]['stock']
-    with TestClient(create_app(path,'test-admin-key')) as c:
+    with TestClient(create_app(path,TEST_ADMIN_KEY)) as c:
         assert c.get('/api/products').json()[0]['stock']==stock
         assert c.get('/api/orders/'+o['id'],headers={'X-Order-Token':o['token']}).status_code==200
         assert len(c.get('/api/products').json())==12
@@ -137,7 +147,7 @@ def test_database_survives_restart(tmp_path):
 def test_database_path_uses_environment_and_creates_parent(monkeypatch, tmp_path):
     path=tmp_path/'nested'/'store.db'
     monkeypatch.setenv('DATABASE_PATH',str(path))
-    with TestClient(create_app(admin_key='test-admin-key')) as c:
+    with TestClient(create_app(admin_key=TEST_ADMIN_KEY)) as c:
         assert c.get('/api/health').json()['status']=='ok'
         assert len(c.get('/api/products').json())==12
     assert path.is_file()
@@ -146,19 +156,43 @@ def test_database_path_uses_environment_and_creates_parent(monkeypatch, tmp_path
 @pytest.mark.parametrize('key',['admindash','short','x'*31])
 def test_production_rejects_weak_admin_keys(monkeypatch, tmp_path, key):
     monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('DATABASE_URL', TEST_DATABASE_URL)
     with pytest.raises(RuntimeError):
         create_app(tmp_path/'production.db', key)
 
 
 def test_production_accepts_long_admin_key(monkeypatch, tmp_path):
     monkeypatch.setenv('APP_ENV', 'production')
-    with TestClient(create_app(tmp_path/'production.db', 'test-only-production-key-at-least-32-characters')):
-        pass
+    monkeypatch.setenv('DATABASE_URL', TEST_DATABASE_URL)
+    create_app(tmp_path/'production.db', secrets.token_urlsafe(32))
+
+
+def test_production_requires_database_url(monkeypatch, tmp_path):
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.delenv('DATABASE_URL', raising=False)
+    with pytest.raises(RuntimeError, match='Production requires DATABASE_URL'):
+        create_app(tmp_path/'production.db',TEST_ADMIN_KEY)
+
+
+def test_postgresql_url_uses_psycopg_and_preserves_ssl_parameters():
+    dummy_password = secrets.token_urlsafe(32)
+    source = URL.create(
+        'postgresql',
+        username='test-user',
+        password=dummy_password,
+        host='db.example.test',
+        database='test_db',
+        query={'sslmode': 'require', 'channel_binding': 'require'},
+    )
+    url = _postgresql_url(source.render_as_string(hide_password=False))
+    assert url.drivername == 'postgresql+psycopg'
+    assert url.query == {'sslmode': 'require', 'channel_binding': 'require'}
+    assert url.password == dummy_password
 
 
 def test_explicit_cors_origin(monkeypatch, tmp_path):
     monkeypatch.setenv('CORS_ORIGINS', 'https://demo.netlify.app')
-    with TestClient(create_app(tmp_path/'cors.db', 'test-admin-key')) as c:
+    with TestClient(create_app(tmp_path/'cors.db',TEST_ADMIN_KEY)) as c:
         headers={'Origin':'https://demo.netlify.app','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type,idempotency-key'}
         response=c.options('/api/orders',headers=headers)
         assert response.status_code==200

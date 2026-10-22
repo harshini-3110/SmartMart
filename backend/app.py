@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Literal
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import uuid
@@ -14,6 +15,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Index, Integer, MetaData, String, Table, create_engine, text
+from sqlalchemy.engine import Connection, Engine, URL, make_url
+from sqlalchemy.exc import SQLAlchemyError
 
 BASE = Path(__file__).resolve().parent
 CATEGORIES = ('Produce', 'Dairy', 'Bakery', 'Pantry')
@@ -81,15 +85,159 @@ CREATE INDEX IF NOT EXISTS orders_created ON orders(created);
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 '''
 
+POSTGRES_SCHEMA = MetaData()
+pg_products = Table(
+    'products',
+    POSTGRES_SCHEMA,
+    Column('id', Integer, primary_key=True),
+    Column('name', String, nullable=False),
+    Column('category', String, nullable=False),
+    Column('description', String, nullable=False),
+    Column('unit', String, nullable=False),
+    Column('price', Integer, CheckConstraint('price > 0'), nullable=False),
+    Column('stock', Integer, CheckConstraint('stock >= 0'), nullable=False),
+    Column('low_stock', Integer, nullable=False),
+    Column('icon', String, nullable=False),
+    Column('active', Boolean, nullable=False, server_default=text('TRUE')),
+)
+pg_orders = Table(
+    'orders',
+    POSTGRES_SCHEMA,
+    Column('id', String, primary_key=True),
+    Column('token', String, nullable=False),
+    Column('customer', String, nullable=False),
+    Column('email', String, nullable=False),
+    Column('address', String, nullable=False),
+    Column('total', Integer, nullable=False),
+    Column('status', String, nullable=False),
+    Column('created', String, nullable=False),
+    Column('idempotency', String, nullable=False, unique=True),
+    Column('request_hash', String, nullable=False),
+)
+pg_order_items = Table(
+    'order_items',
+    POSTGRES_SCHEMA,
+    Column('id', Integer, primary_key=True),
+    Column('order_id', String, ForeignKey('orders.id'), nullable=False),
+    Column('product_id', Integer, ForeignKey('products.id'), nullable=False),
+    Column('name', String, nullable=False),
+    Column('unit_price', Integer, nullable=False),
+    Column('quantity', Integer, CheckConstraint('quantity > 0'), nullable=False),
+)
+Index('order_items_order', pg_order_items.c.order_id)
+Index('orders_created', pg_orders.c.created)
+pg_metadata = Table(
+    'metadata',
+    POSTGRES_SCHEMA,
+    Column('key', String, primary_key=True),
+    Column('value', String, nullable=False),
+)
 
-def create_app(db_path=None, admin_key=None, seed=True):
-    database = str(db_path or os.getenv('DATABASE_PATH', str(BASE / 'data' / 'smartmart.db')))
+
+class _PostgresRow(dict):
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return tuple(self.values())[key]
+        return super().__getitem__(key)
+
+
+class _PostgresResult:
+    def __init__(self, result, lastrowid=None):
+        self._result = result
+        self.lastrowid = lastrowid
+        self.rowcount = result.rowcount
+
+    def _row(self, row):
+        return _PostgresRow(row._mapping) if row is not None else None
+
+    def fetchone(self):
+        return self._row(self._result.fetchone())
+
+    def fetchall(self):
+        return [self._row(row) for row in self._result.fetchall()]
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+
+class _PostgresConnection:
+    def __init__(self, connection: Connection):
+        self.connection = connection
+
+    def execute(self, statement, parameters=()):
+        if isinstance(statement, str):
+            sql = statement
+            if isinstance(parameters, dict):
+                bound = parameters
+            else:
+                values = iter(parameters)
+                index = 0
+
+                def bind(_):
+                    nonlocal index
+                    name = f'p{index}'
+                    index += 1
+                    bound[name] = next(values)
+                    return f':{name}'
+
+                bound = {}
+                sql = re.sub(r'\?', bind, sql)
+            returning = sql.lstrip().upper().startswith('INSERT INTO PRODUCTS')
+            if returning and ' RETURNING ' not in sql.upper():
+                sql += ' RETURNING id'
+            result = self.connection.execute(text(sql), bound)
+            lastrowid = result.scalar_one() if returning else None
+            return _PostgresResult(result, lastrowid)
+        result = self.connection.execute(statement, parameters)
+        return _PostgresResult(result)
+
+
+def _postgresql_url(value: str) -> URL:
+    try:
+        url = make_url(value)
+    except SQLAlchemyError as error:
+        raise RuntimeError('DATABASE_URL is not a valid PostgreSQL connection string.') from error
+    if url.drivername not in ('postgresql', 'postgresql+psycopg'):
+        raise RuntimeError('DATABASE_URL must use PostgreSQL.')
+    return url.set(drivername='postgresql+psycopg')
+
+
+def create_app(db_path=None, admin_key=None, seed=True, database_url=None):
+    database_url = database_url or os.getenv('DATABASE_URL')
+    if os.getenv('APP_ENV') == 'production' and not database_url:
+        raise RuntimeError('Production requires DATABASE_URL; SQLite fallback is disabled.')
     key = admin_key or os.getenv('ADMIN_KEY', 'admindash')
     if os.getenv('APP_ENV') == 'production' and (key == 'admindash' or len(key) < 32):
         raise RuntimeError('Production requires a unique ADMIN_KEY of at least 32 characters.')
 
+    engine: Engine | None = None
+    postgres = bool(database_url and (not db_path or os.getenv('APP_ENV') == 'production'))
+    if postgres:
+        url = _postgresql_url(database_url)
+        engine = create_engine(
+            url,
+            pool_size=2,
+            max_overflow=1,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_timeout=30,
+        )
+        database = None
+    else:
+        database = str(db_path or os.getenv('DATABASE_PATH', str(BASE / 'data' / 'smartmart.db')))
+
     @contextmanager
     def db(write=False):
+        if postgres:
+            if engine is None:
+                raise RuntimeError('PostgreSQL database engine is not initialized.')
+            if write:
+                with engine.begin() as connection:
+                    yield _PostgresConnection(connection)
+            else:
+                with engine.connect() as connection:
+                    yield _PostgresConnection(connection)
+            return
         conn = sqlite3.connect(database, timeout=15)
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA foreign_keys=ON')
@@ -107,11 +255,7 @@ def create_app(db_path=None, admin_key=None, seed=True):
 
     @asynccontextmanager
     async def lifespan(app):
-        Path(database).parent.mkdir(parents=True, exist_ok=True)
-        with db() as c:
-            c.execute('PRAGMA journal_mode=WAL')
-            c.executescript(SCHEMA)
-        with db(True) as c:
+        def seed_data(c):
             if seed and not c.execute("SELECT 1 FROM metadata WHERE key='seeded'").fetchone():
                 for item in json.loads((BASE / 'seed.json').read_text(encoding='utf-8')):
                     c.execute('INSERT INTO products(name,category,description,unit,price,stock,low_stock,icon) VALUES(:name,:category,:description,:unit,:price,:stock,:low_stock,:icon)', item)
@@ -120,9 +264,29 @@ def create_app(db_path=None, admin_key=None, seed=True):
                 for pid in (1,4):
                     p=c.execute('SELECT * FROM products WHERE id=?',(pid,)).fetchone()
                     c.execute('INSERT INTO order_items(order_id,product_id,name,unit_price,quantity) VALUES(?,?,?,?,1)',(oid,pid,p['name'],p['price']))
-                    c.execute('UPDATE products SET stock=stock-1 WHERE id=?',(pid,))
+                    c.execute('UPDATE products SET stock=stock-? WHERE id=?',(1,pid))
                 c.execute("INSERT INTO metadata VALUES('seeded','1')")
+
+        if postgres:
+            if engine is None:
+                raise RuntimeError('PostgreSQL database engine is not initialized.')
+            with engine.begin() as connection:
+                connection.execute(
+                    text('SELECT pg_advisory_xact_lock(:lock_id)'),
+                    {'lock_id': 7620198431021},
+                ).scalar_one()
+                POSTGRES_SCHEMA.create_all(connection)
+                seed_data(_PostgresConnection(connection))
+        else:
+            Path(database).parent.mkdir(parents=True, exist_ok=True)
+            with db() as c:
+                c.execute('PRAGMA journal_mode=WAL')
+                c.executescript(SCHEMA)
+            with db(True) as c:
+                seed_data(c)
         yield
+        if engine is not None:
+            engine.dispose()
 
     app=FastAPI(title='SmartMart API',version='1.0.0',lifespan=lifespan)
     origins=[o.strip() for o in os.getenv('CORS_ORIGINS','http://localhost:8000,http://127.0.0.1:8000').split(',') if o.strip()]
@@ -153,7 +317,9 @@ def create_app(db_path=None, admin_key=None, seed=True):
     @app.get('/api/products')
     def products(q: str = Query(default='',max_length=100),category: str = ''):
         with db() as c:
-            return [product_dict(r) for r in c.execute('SELECT * FROM products WHERE active=1 AND (name LIKE ? OR description LIKE ?) AND (?="" OR category=?) ORDER BY id',(f'%{q}%',f'%{q}%',category,category))]
+            operator = 'ILIKE' if postgres else 'LIKE'
+            statement = f"SELECT * FROM products WHERE active=TRUE AND (name {operator} ? OR description {operator} ?) AND (?='' OR category=?) ORDER BY id"
+            return [product_dict(r) for r in c.execute(statement,(f'%{q}%',f'%{q}%',category,category))]
 
     @app.get('/api/admin/products',dependencies=[Depends(admin)])
     def inventory():
@@ -178,7 +344,7 @@ def create_app(db_path=None, admin_key=None, seed=True):
     @app.delete('/api/admin/products/{pid}',dependencies=[Depends(admin)])
     def delete_product(pid:int):
         with db(True) as c:
-            if c.execute('UPDATE products SET active=0 WHERE id=?',(pid,)).rowcount==0:
+            if c.execute('UPDATE products SET active=FALSE WHERE id=?',(pid,)).rowcount==0:
                 raise HTTPException(404,'Product not found')
         return {'archived':pid}
 
@@ -186,6 +352,9 @@ def create_app(db_path=None, admin_key=None, seed=True):
     def checkout(body:Checkout,idempotency_key:str=Header(min_length=16,max_length=100)):
         fingerprint=hashlib.sha256(body.model_dump_json().encode()).hexdigest()
         with db(True) as c:
+            if postgres:
+                lock_id = int.from_bytes(hashlib.blake2b(idempotency_key.encode(), digest_size=8).digest(), 'big', signed=True)
+                c.execute('SELECT pg_advisory_xact_lock(?)', (lock_id,)).fetchone()
             existing=c.execute('SELECT * FROM orders WHERE idempotency=?',(idempotency_key,)).fetchone()
             if existing:
                 if existing['request_hash']!=fingerprint:
@@ -198,8 +367,9 @@ def create_app(db_path=None, admin_key=None, seed=True):
                 quantities[line.product_id]=quantities.get(line.product_id,0)+line.quantity
                 prices[line.product_id]=line.unit_price
             total=0;lines=[]
-            for pid,quantity in quantities.items():
-                p=c.execute('SELECT * FROM products WHERE id=? AND active=1',(pid,)).fetchone()
+            for pid,quantity in sorted(quantities.items()):
+                lock_clause = ' FOR UPDATE' if postgres else ''
+                p=c.execute(f'SELECT * FROM products WHERE id=? AND active=TRUE{lock_clause}',(pid,)).fetchone()
                 if not p:
                     raise HTTPException(409,'A product is no longer available. Refresh your basket.')
                 if quantity>99 or p['stock']<quantity:
@@ -232,7 +402,8 @@ def create_app(db_path=None, admin_key=None, seed=True):
     def update_order(oid:str,body:StatusUpdate):
         allowed={'pending':{'packed','cancelled'},'packed':{'completed','cancelled'},'completed':set(),'cancelled':set()}
         with db(True) as c:
-            row=c.execute('SELECT * FROM orders WHERE id=?',(oid,)).fetchone()
+            lock_clause = ' FOR UPDATE' if postgres else ''
+            row=c.execute(f'SELECT * FROM orders WHERE id=?{lock_clause}',(oid,)).fetchone()
             if not row:
                 raise HTTPException(404,'Order not found')
             if row['status']==body.status:
@@ -249,15 +420,16 @@ def create_app(db_path=None, admin_key=None, seed=True):
     def report(start:date|None=None,end:date|None=None):
         if start and end and start>end:
             raise HTTPException(422,'Start date must be before end date')
-        lo=start.isoformat() if start else '0000';hi=end.isoformat() if end else '9999'
+        lo=datetime.combine(start,datetime.min.time(),timezone.utc).isoformat() if start else '0000'
+        hi=datetime.combine(end+timedelta(days=1),datetime.min.time(),timezone.utc).isoformat() if end else '9999'
         with db() as c:
-            selected=[dict(r) for r in c.execute('SELECT * FROM orders WHERE substr(created,1,10)>=? AND substr(created,1,10)<=?',(lo,hi))]
+            selected=[dict(r) for r in c.execute('SELECT * FROM orders WHERE created>=? AND created<?',(lo,hi))]
             complete=[r for r in selected if r['status']=='completed']
             days={}
             for r in complete:
                 day=r['created'][:10];days[day]=days.get(day,0)+r['total']
-            top=[dict(r) for r in c.execute('SELECT i.name,SUM(i.quantity) AS quantity,SUM(i.quantity*i.unit_price) AS revenue FROM order_items i JOIN orders o ON i.order_id=o.id WHERE o.status="completed" AND substr(o.created,1,10)>=? AND substr(o.created,1,10)<=? GROUP BY i.product_id,i.name ORDER BY revenue DESC LIMIT 5',(lo,hi))]
-            low=[product_dict(r) for r in c.execute('SELECT * FROM products WHERE active=1 AND stock<=low_stock ORDER BY stock')]
+            top=[dict(r) for r in c.execute("SELECT i.name,SUM(i.quantity) AS quantity,SUM(i.quantity*i.unit_price) AS revenue FROM order_items i JOIN orders o ON i.order_id=o.id WHERE o.status='completed' AND o.created>=? AND o.created<? GROUP BY i.product_id,i.name ORDER BY revenue DESC LIMIT 5",(lo,hi))]
+            low=[product_dict(r) for r in c.execute('SELECT * FROM products WHERE active=TRUE AND stock<=low_stock ORDER BY stock')]
             return {'revenue':sum(r['total'] for r in complete),'completed':len(complete),'orders':len(selected),'pending':sum(r['status'] in ('pending','packed') for r in selected),'cancelled':sum(r['status']=='cancelled' for r in selected),'daily':[{'date':k,'revenue':v} for k,v in sorted(days.items())],'top_products':top,'low_stock':low}
 
     app.mount('/',StaticFiles(directory=str(BASE.parent/'frontend'),html=True),name='frontend')
